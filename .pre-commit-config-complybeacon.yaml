@@ -1,0 +1,184 @@
+# Pre-commit Configuration for complybeacon
+# Go monorepo with multiple modules (compass, proofwatch, truthbeam)
+
+default_stages: [pre-push]
+
+repos:
+  # ==============================================================================
+  # BASIC FILE AND CONTENT CHECKS
+  # ==============================================================================
+  
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Essential file checks
+      - id: trailing-whitespace
+        stages: [pre-commit, pre-push]
+      - id: end-of-file-fixer
+        stages: [pre-commit, pre-push]
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+        stages: [pre-commit, pre-push]
+      
+      # Security and safety
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        stages: [pre-commit, pre-push]
+      - id: check-merge-conflict
+        stages: [pre-commit, pre-push]
+      - id: detect-aws-credentials
+        stages: [pre-commit, pre-push]
+      - id: detect-private-key
+        stages: [pre-commit, pre-push]
+      
+      # Configuration validation
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        stages: [pre-push]
+      - id: check-json
+        stages: [pre-push]
+      
+      # Git workflow protection
+      - id: check-case-conflict
+        stages: [pre-commit, pre-push]
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
+        stages: [pre-commit, pre-push]
+
+  # ==============================================================================
+  # GO LANGUAGE HOOKS - Optimized for monorepo
+  # ==============================================================================
+  
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      # Fast formatting checks
+      - id: go-fmt
+        stages: [pre-commit, pre-push]
+      - id: go-imports
+        stages: [pre-commit, pre-push]
+      
+      # Build and test verification
+      - id: go-vet-mod
+        stages: [pre-push]
+      - id: go-unit-tests
+        stages: [pre-push]
+      - id: go-build-mod
+        stages: [pre-push]
+      
+      # Dependency management
+      - id: go-mod-tidy
+        stages: [pre-push]
+      
+      # Linting (using existing .golangci.yml)
+      - id: golangci-lint
+        stages: [pre-push]
+
+  # ==============================================================================
+  # SECURITY SCANNING
+  # ==============================================================================
+  
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        stages: [pre-push]
+
+  # ==============================================================================
+  # CONTAINER AND DEPLOYMENT FILES
+  # ==============================================================================
+  
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        files: (Dockerfile|Containerfile).*
+        stages: [pre-push]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ['-d', 'relaxed']
+        files: \.(yaml|yml)$
+        stages: [pre-push]
+
+  # ==============================================================================
+  # DOCUMENTATION
+  # ==============================================================================
+  
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix']
+        files: \.(md|markdown)$
+        stages: [pre-push]
+
+  # ==============================================================================
+  # LOCAL CUSTOM HOOKS - Monorepo specific
+  # ==============================================================================
+  
+  - repo: local
+    hooks:
+      # License header enforcement
+      - id: check-license-headers
+        name: Check and add Apache-2.0 license headers
+        entry: ./scripts/check-license-headers.sh
+        language: system
+        stages: [pre-push]
+        files: \.(go|sh)$
+        
+      # Monorepo workspace verification
+      - id: go-workspace-sync
+        name: Verify Go workspace is properly configured
+        entry: sh -c 'make workspace && go work sync'
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        
+      # Module-specific tests
+      - id: module-tests
+        name: Run tests for all modules
+        entry: make test
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        
+      # Configuration validation
+      - id: validate-beacon-config
+        name: Validate beacon configuration files
+        entry: ./scripts/validate-beacon-config.sh
+        language: system
+        stages: [pre-push]
+        files: ^beacon-distro/.*\.(yaml|yml)$
+        
+      # API specification validation
+      - id: validate-api-spec
+        name: Validate OpenAPI specification
+        entry: ./scripts/validate-api-spec.sh
+        language: system
+        stages: [pre-push]
+        files: ^api\.yaml$
+        
+      # Mapping files validation
+      - id: validate-mappings
+        name: Validate compliance mapping files
+        entry: ./scripts/validate-mappings.sh
+        language: system
+        stages: [pre-push]
+        files: ^beacon-distro/mappings/.*\.yaml$
+
+# ==============================================================================
+# CI CONFIGURATION
+# ==============================================================================
+
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes for complybeacon
+    
+    Applied automatic fixes from pre-commit hooks
+  autofix_prs: true
+  autoupdate_schedule: weekly
+  skip: [go-workspace-sync, module-tests]  # Skip build-heavy operations in CI

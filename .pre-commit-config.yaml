@@ -1,0 +1,180 @@
+# Pre-commit Configuration for complytime-demos
+# Ansible/YAML focused project with VM and infrastructure management
+
+default_stages: [pre-push]
+
+repos:
+  # ==============================================================================
+  # BASIC FILE AND CONTENT CHECKS
+  # ==============================================================================
+  
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # Essential file checks
+      - id: trailing-whitespace
+        stages: [pre-commit, pre-push]
+      - id: end-of-file-fixer
+        stages: [pre-commit, pre-push]
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+        stages: [pre-commit, pre-push]
+      
+      # Security and safety
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        stages: [pre-commit, pre-push]
+      - id: check-merge-conflict
+        stages: [pre-commit, pre-push]
+      - id: detect-aws-credentials
+        stages: [pre-commit, pre-push]
+      - id: detect-private-key
+        stages: [pre-commit, pre-push]
+      
+      # Configuration validation
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        stages: [pre-push]
+      
+      # Git workflow safety
+      - id: check-case-conflict
+        stages: [pre-commit, pre-push]
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
+        stages: [pre-commit, pre-push]
+
+  # ==============================================================================
+  # YAML AND ANSIBLE SPECIFIC CHECKS
+  # ==============================================================================
+  
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ['-d', 'relaxed']
+        stages: [pre-push]
+
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v24.12.2
+    hooks:
+      - id: ansible-lint
+        files: \.(yaml|yml)$
+        stages: [pre-push]
+        args: ['--offline']  # Avoid external dependencies in pre-commit
+
+  # ==============================================================================
+  # SECURITY SCANNING
+  # ==============================================================================
+  
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        stages: [pre-push]
+
+  # ==============================================================================
+  # SHELL SCRIPT VALIDATION
+  # ==============================================================================
+  
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ['--severity=warning']
+        stages: [pre-push]
+
+  # ==============================================================================
+  # DOCKER AND INFRASTRUCTURE
+  # ==============================================================================
+  
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        files: docker-compose\.yml
+        stages: [pre-push]
+
+  # ==============================================================================
+  # DOCUMENTATION
+  # ==============================================================================
+  
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix']
+        files: \.(md|markdown)$
+        stages: [pre-push]
+
+  # ==============================================================================
+  # LOCAL CUSTOM HOOKS - Infrastructure specific
+  # ==============================================================================
+  
+  - repo: local
+    hooks:
+      # Ansible playbook validation
+      - id: ansible-playbook-check
+        name: Validate Ansible playbooks syntax
+        entry: ./scripts/validate-ansible-playbooks.sh
+        language: system
+        stages: [pre-push]
+        files: ^base_ansible_env/.*\.yml$
+        
+      # Vagrant file validation
+      - id: vagrant-validate
+        name: Validate Vagrant configurations
+        entry: ./scripts/validate-vagrant-files.sh
+        language: system
+        stages: [pre-push]
+        files: ^base_vms/.*/Vagrantfile$
+        
+      # Demo script validation
+      - id: demo-scripts-check
+        name: Validate demo scripts
+        entry: ./scripts/validate-demo-scripts.sh
+        language: system
+        stages: [pre-push]
+        files: \.(sh|bash)$
+        
+      # Infrastructure documentation sync
+      - id: update-infrastructure-docs
+        name: Update infrastructure documentation
+        entry: ./scripts/update-infrastructure-docs.sh
+        language: system
+        stages: [pre-push]
+        files: ^(base_vms|base_ansible_env)/
+        
+      # VM inventory validation
+      - id: validate-vm-inventory
+        name: Validate VM inventory configurations
+        entry: ./scripts/validate-vm-inventory.sh
+        language: system
+        stages: [pre-push]
+        files: populate_ansible_inventory\.sh
+        
+      # Docker compose validation
+      - id: docker-compose-validate
+        name: Validate docker-compose configuration
+        entry: docker-compose -f docker-compose.yml config
+        language: system
+        stages: [pre-push]
+        files: docker-compose\.yml
+        pass_filenames: false
+
+# ==============================================================================
+# CI CONFIGURATION
+# ==============================================================================
+
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes for complytime-demos
+    
+    Applied automatic fixes for YAML and infrastructure files
+  autofix_prs: true
+  autoupdate_schedule: weekly
+  skip: [
+    ansible-playbook-check,
+    vagrant-validate,
+    docker-compose-validate
+  ]  # Skip environment-dependent validations in CI

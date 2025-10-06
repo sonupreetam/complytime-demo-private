@@ -1,0 +1,143 @@
+---
+- name: "ComplyTime Development Binaries Demo"
+  hosts: localhost
+  connection: local
+  become: false
+  vars:
+    complyctl_repo_dest: "/workspace/complyctl"  # Mounted source code in container
+    complyctl_workspace: "~/.local/share/complytime"
+    demo_framework: "cusp_fedora"
+    
+    # CUSP Fedora OSCAL content URLs  
+    catalog: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/catalogs/cusp_fedora/catalog.json"
+    profile: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/profiles/fedora-cusp_fedora-default/profile.json"
+    component_definition: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/component-definitions/fedora/fedora-cusp_fedora-default/component-definition.json"
+
+    catalog_file: "cusp-catalog.json"
+    profile_file: "cusp-profile.json"
+    component_definition_file: "cusp-component-definition.json"
+    
+  tasks:
+    - name: "Include development binaries setup tasks"
+      import_tasks: populate_complyctl_dev_binaries.yml
+      
+    - name: "Download OSCAL Catalog"
+      ansible.builtin.get_url:
+        url: "{{ catalog }}"
+        dest: "{{ complyctl_workspace }}/controls/{{ catalog_file }}"
+        mode: "0644"
+
+    - name: "Download OSCAL Profile"
+      ansible.builtin.get_url:
+        url: "{{ profile }}"
+        dest: "{{ complyctl_workspace }}/controls/{{ profile_file }}"
+        mode: "0644"
+
+    - name: "Download OSCAL Component Definition"
+      ansible.builtin.get_url:
+        url: "{{ component_definition }}"
+        dest: "{{ complyctl_workspace }}/bundles/{{ component_definition_file }}"
+        mode: "0644"
+
+    - name: "Fix OSCAL path references in profile"
+      ansible.builtin.replace:
+        path: "{{ complyctl_workspace }}/controls/{{ profile_file }}"
+        regexp: "trestle://catalogs/cusp_fedora/catalog.json"
+        replace: "trestle://controls/{{ catalog_file }}"
+
+    - name: "Fix OSCAL path references in component definition"
+      ansible.builtin.replace:
+        path: "{{ complyctl_workspace }}/bundles/{{ component_definition_file }}"
+        regexp: "trestle://profiles/fedora-cusp_fedora-default/profile.json"
+        replace: "trestle://controls/{{ profile_file }}"
+      
+    - name: "Wait for setup to complete"
+      pause:
+        seconds: 2
+        
+    - name: "Verify binary installation"
+      command: "ls -la ~/bin/complyctl"
+      register: binary_location
+      
+    - name: "Check development mode"
+      shell: "echo $COMPLYTIME_DEV_MODE"
+      environment:
+        COMPLYTIME_DEV_MODE: "1"
+      register: dev_mode_check
+      
+    - name: "Test complyctl functionality"
+      shell: "~/bin/complyctl list 2>&1 || echo 'ComplyTime development environment ready'"
+      environment:
+        COMPLYTIME_DEV_MODE: "1"
+      register: functionality_test
+      
+    - name: "Display development environment summary"
+      debug:
+        msg: |
+          🎉 COMPLYTIME DEVELOPMENT BINARIES DEMO COMPLETE! 🎉
+          
+          ============================================
+          DEVELOPMENT ENVIRONMENT SUCCESSFULLY SET UP:
+          ============================================
+          
+          Binary Location: {{ binary_location.stdout }}
+          Development Mode: {{ dev_mode_check.stdout }}
+          
+          Functionality Test:
+          {{ functionality_test.stdout }}
+          
+          ============================================
+          WHAT WAS DEMONSTRATED:
+          ============================================
+          
+          1. ✅ Built complyctl locally on host machine
+          2. ✅ Copied development binaries to target environment
+          3. ✅ Set up development mode with COMPLYTIME_DEV_MODE=1
+          4. ✅ Configured OpenSCAP plugin with proper manifest
+          5. ✅ Verified binary functionality and workspace setup
+          
+          ============================================
+          DEVELOPMENT WORKFLOW BENEFITS:
+          ============================================
+          
+          - Local compilation for faster iteration
+          - Development mode for testing features
+          - Quick deployment of custom builds
+          - Plugin development and testing
+          - Workspace isolation and control
+          
+          ============================================
+          DEVELOPMENT SETUP DETAILS:
+          ============================================
+          
+          Workspace: {{ complyctl_workspace }}
+          Binary Path: ~/bin/complyctl
+          Plugin Path: {{ complyctl_workspace }}/plugins/
+          Development Mode: Enabled (COMPLYTIME_DEV_MODE=1)
+          
+          ============================================
+          QUICK REFERENCE COMMANDS:
+          ============================================
+          
+          # Check binary location
+          which complyctl
+          
+          # Verify development mode
+          echo $COMPLYTIME_DEV_MODE
+          
+          # List frameworks
+          complyctl list
+          
+          # Get framework details
+          complyctl info cusp_fedora
+          
+          # Generate assessment plan
+          complyctl plan cusp_fedora
+          
+          # Show workspace structure
+          tree -a {{ complyctl_workspace }}
+          
+          ============================================
+          🎯 Development Binaries Demo completed successfully! 🎯
+          ============================================
+

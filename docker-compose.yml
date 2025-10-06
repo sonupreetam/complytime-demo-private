@@ -1,0 +1,27 @@
+services:
+  fedora-demo:
+    image: fedora:42
+    container_name: complytime-fedora-demo
+    privileged: true
+    volumes:
+      - ~/.ssh:/root/.ssh:ro
+      - /Users/sonu/GitHub/complyctl:/workspace/complyctl:cached
+    ports:
+      - "2222:22"
+    environment:
+      - COMPLYTIME_DEV_MODE=1
+    command: >
+      bash -c "
+        dnf update -y &&
+        dnf install -y openssh-server openssh-clients git python3-pip tar tree vim openscap-scanner openscap-engine-sce scap-security-guide ansible &&
+        ssh-keygen -A &&
+        sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config &&
+        /usr/sbin/sshd -D &
+        tail -f /dev/null
+      "
+    networks:
+      - complytime-network
+
+networks:
+  complytime-network:
+    driver: bridge

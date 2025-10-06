@@ -1,0 +1,84 @@
+---
+# Development Binaries Setup Tasks
+# Update according to where your forked complyctl repository was cloned
+# complyctl_repo_dest: "/path/to/your/forked/complyctl"
+# complyctl_workspace: "~/.local/share/complytime"
+    - name: "Ensure removal of packages from previous installation"
+      ansible.builtin.dnf:
+        name:
+          - complyctl
+          - complyctl-openscap-plugin
+        state: absent
+      become: true
+
+    - name: "Ensure bin directory in home directory to make it easier to call complyctl"
+      ansible.builtin.file:
+        path: "~/bin"
+        state: directory
+        mode: "0750"
+
+    - name: "Copy cross-compiled complyctl binary"
+      ansible.builtin.copy:
+        src: "/tmp/linux-bin/complyctl"
+        dest: "~/bin/complyctl"
+        mode: "0750"
+        remote_src: yes
+
+    - name: "Ensure COMPLYTIME_DEV_MODE=1 is set for the testing user"
+      ansible.builtin.lineinfile:
+        path: ~/.bashrc
+        line: 'export COMPLYTIME_DEV_MODE=1'
+        insertafter: EOF
+        state: present
+
+    - name: "Add ~/bin to PATH for the testing user"
+      ansible.builtin.lineinfile:
+        path: ~/.bashrc
+        line: 'export PATH=$HOME/bin:$PATH'
+        insertafter: EOF
+        state: present
+
+    - name: "Check existing complyctl directories in case there is already a Workspace"
+      ansible.builtin.stat:
+        path: "{{ complyctl_workspace }}"
+      register: result_complyctl_workspace
+
+    - name: "Initialize complyctl to ensure the Workspace is created"
+      ansible.builtin.command:
+        cmd: "~/bin/complyctl list"
+      environment:
+        COMPLYTIME_DEV_MODE: "1"
+        PATH: "{{ ansible_env.HOME }}/bin:{{ ansible_env.PATH }}"
+      failed_when: false
+      changed_when: not result_complyctl_workspace.stat.exists
+      when: not result_complyctl_workspace.stat.exists
+
+    - name: "Ensure workspace directories exist"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ complyctl_workspace }}/controls"
+        - "{{ complyctl_workspace }}/bundles"
+        - "{{ complyctl_workspace }}/plugins"
+
+    - name: "Copy cross-compiled OpenSCAP plugin binary"
+      ansible.builtin.copy:
+        src: "/tmp/linux-bin/openscap-plugin"
+        dest: "{{ complyctl_workspace }}/plugins/openscap-plugin"
+        mode: "0750"
+        remote_src: yes
+
+    - name: "Compute SHA256 checksum of the openscap-plugin binary"
+      ansible.builtin.stat:
+        path: "{{ complyctl_workspace }}/plugins/openscap-plugin"
+        checksum_algorithm: sha256
+      register: result_plugin_checksum
+
+    - name: "Create or update the openscap-plugin manifest"
+      ansible.builtin.template:
+        src: c2p-openscap-manifest.json.j2
+        dest: "{{ complyctl_workspace }}/plugins/c2p-openscap-manifest.json"
+        mode: "0640"
+...

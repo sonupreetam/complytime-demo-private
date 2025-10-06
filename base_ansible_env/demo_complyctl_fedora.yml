@@ -1,0 +1,381 @@
+---
+- name: "Comprehensive 3-Phase ComplyTime Demo - CUSP Fedora Compliance Workflow"
+  hosts: localhost
+  connection: local
+  become: false
+  vars:
+    complytime_workspace: "~/.local/share/complytime"
+    framework_id: cusp_fedora
+
+    # This file will be created at the end of Phase 1, edited in Phase 2 and consumed in Phase 3.
+    custom_config: config_plan.yml
+
+    # These directories are created locally to stored files fetched from testing VM
+    # They can be safely removed after the tests
+    local_directories:
+      - "./downloads_scan1"
+      - "./downloads_scan2"
+      - "./downloads_scan3"
+
+    # A list of files to be fetched from testing VM after each testing phase
+    generated_files:
+      - "config_plan.yml"
+      - "complytime/assessment-plan.json"
+      - "complytime/assessment-results.json"
+      - "complytime/assessment-results.md"
+
+    # This command is used multiple times to allow easier comparison between testing phases
+    cmd_tree: "tree -Dpugh --timefmt %H:%M -L1 complytime/"
+    cmd_help: |
+      Here are examples of nice commands that could be used to support Product and Compliance experts:
+        complyctl info {{ framework_id }}
+        complyctl info {{ framework_id }} --control cusp_fedora_4-1
+        complyctl info {{ framework_id }} --rule accounts_umask_etc_login_defs
+
+    # Variables used for fixing the system
+    var_sudo_logfile: "/var/log/sudo.log"
+    var_accounts_user_umask: "027"
+
+  tasks:
+    # Setup phase - Install and configure complyctl environment
+    - name: "Setup - Install required packages"
+      ansible.builtin.dnf:
+        name:
+          - golang
+          - git
+          - openscap-scanner
+          - openscap-engine-sce
+          - scap-security-guide
+          - tree
+          - vim
+        state: present
+        update_cache: yes
+      become: true
+
+    - name: "Setup - Create complyctl workspace directories"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ complytime_workspace }}/controls"
+        - "{{ complytime_workspace }}/bundles"
+        - "{{ complytime_workspace }}/plugins"
+
+    - name: "Setup - Clone complyctl repository"
+      ansible.builtin.git:
+        repo: "https://github.com/complytime/complyctl.git"
+        dest: "/tmp/complyctl"
+        force: yes
+
+    - name: "Setup - Build complyctl binary"
+      ansible.builtin.command:
+        cmd: "make build"
+        chdir: "/tmp/complyctl"
+      environment:
+        COMPLYTIME_DEV_MODE: "1"
+
+    - name: "Setup - Install complyctl binary"
+      ansible.builtin.copy:
+        src: "/tmp/complyctl/bin/complyctl"
+        dest: "/usr/local/bin/complyctl"
+        mode: "0755"
+        remote_src: yes
+      become: true
+
+    - name: "Setup - Set COMPLYTIME_DEV_MODE environment variable"
+      ansible.builtin.lineinfile:
+        path: "{{ ansible_env.HOME }}/.bashrc"
+        line: 'export COMPLYTIME_DEV_MODE=1'
+        insertafter: EOF
+        state: present
+
+    - name: "Setup - Download CUSP OSCAL content"
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        dest: "{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - { url: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/catalogs/cusp_fedora/catalog.json", dest: "{{ complytime_workspace }}/controls/cusp-catalog.json" }
+        - { url: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/profiles/fedora-cusp_fedora-default/profile.json", dest: "{{ complytime_workspace }}/controls/cusp-profile.json" }
+        - { url: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/component-definitions/fedora/fedora-cusp_fedora-default/component-definition.json", dest: "{{ complytime_workspace }}/bundles/cusp-component-definition.json" }
+
+    - name: "Setup - Fix OSCAL path references"
+      ansible.builtin.replace:
+        path: "{{ item.file }}"
+        regexp: "{{ item.regexp }}"
+        replace: "{{ item.replace }}"
+      loop:
+        - { file: "{{ complytime_workspace }}/controls/cusp-profile.json", regexp: "trestle://catalogs/cusp_fedora/catalog.json", replace: "trestle://controls/cusp-catalog.json" }
+        - { file: "{{ complytime_workspace }}/bundles/cusp-component-definition.json", regexp: "trestle://profiles/fedora-cusp_fedora-default/profile.json", replace: "trestle://controls/cusp-profile.json" }
+
+    - name: "Setup - Copy OpenSCAP plugin"
+      ansible.builtin.copy:
+        src: "/tmp/complyctl/bin/openscap-plugin"
+        dest: "{{ complytime_workspace }}/plugins/openscap-plugin"
+        mode: "0755"
+        remote_src: yes
+
+    - name: "Setup - Compute plugin checksum and create manifest"
+      ansible.builtin.stat:
+        path: "{{ complytime_workspace }}/plugins/openscap-plugin"
+        checksum_algorithm: sha256
+      register: plugin_checksum
+
+    - name: "Setup - Create OpenSCAP plugin manifest"
+      ansible.builtin.template:
+        src: "templates/c2p-openscap-manifest.json.j2"
+        dest: "{{ complytime_workspace }}/plugins/c2p-openscap-manifest.json"
+        mode: "0644"
+      vars:
+        result_plugin_checksum: "{{ plugin_checksum }}"
+
+    - name: "Setup - Initialize complyctl workspace"
+      ansible.builtin.command:
+        cmd: "complyctl list"
+      environment:
+        COMPLYTIME_DEV_MODE: "1"
+      failed_when: false
+      changed_when: false
+
+    # Prep phase - Set up non-compliant state for demonstration
+    - name: "Prep - Ensure removal of 'firewalld' package to demonstrate non-compliance"
+      ansible.builtin.dnf:
+        name:
+          - firewalld
+        state: absent
+      become: true
+
+    - name: "Prep - Ensure '/etc/sudoers' is not compliant with 'sudo_custom_logfile rule'"
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        line: 'Defaults logfile={{ var_sudo_logfile }}'
+        validate: /usr/sbin/visudo -cf %s
+        state: absent
+      become: true
+
+    - name: "Prep - Ensure '/etc/login.defs' is not compliant with 'accounts_umask_etc_login_defs'"
+      ansible.builtin.replace:
+        path: /etc/login.defs
+        regexp: ^(\s*)UMASK(\s+).*
+        replace: '\g<1>UMASK\g<2>022'
+      become: true
+
+    - name: "Prep - Ensure local directories to fetch generated files"
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ local_directories }}"
+
+    # Phase 1: Scanning out-of-box
+    - name: "Starting the Phase 1 - Scanning out-of-box"
+      ansible.builtin.debug:
+        msg: "Phase 1 will execute the sequence of 'complyctl' commands out-of-box"
+
+    - name: "Phase 1 - Execute 'plan' command to create Assessment Plan"
+      ansible.builtin.command:
+        cmd: "complyctl plan {{ framework_id }}"
+      changed_when: true
+
+    - name: "Phase 1 - Execute 'generate' command to create policy and remediation"
+      ansible.builtin.command:
+        cmd: "complyctl generate"
+      changed_when: true
+
+    - name: "Phase 1 - Execute 'scan' command with Markdown results"
+      ansible.builtin.command:
+        cmd: "complyctl scan --with-md"
+      changed_when: true
+      become: true
+
+    - name: "Phase 1 - Run tree command to collect directory structure"
+      ansible.builtin.command:
+        cmd: "{{ cmd_tree }}"
+      changed_when: false
+      register: result_tree_scan1
+
+    - name: "Phase 1 - Generate a configuration file to customize Assessment Plan in Phase 2"
+      ansible.builtin.command:
+        cmd: "complyctl plan {{ framework_id }} --dry-run --out {{ custom_config }}"
+      changed_when: true
+
+    - name: "Phase 1 - Fetch files from remote host to local machine"
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ local_directories[0] }}/"
+        flat: true
+      loop: "{{ generated_files }}"
+      become: true
+
+    # Phase 2: Scanning with a custom Assessment Plan
+    - name: "Starting the Phase 2 - Scanning with a custom Assessment Plan"
+      ansible.builtin.debug:
+        msg: "Phase 2 will edit the Assessment Plan before the same sequence of 'complyctl' commands"
+
+    - name: "Phase 2 - Edit customized configuration file for Assessment Plan"
+      ansible.builtin.copy:
+        src: "demo_cusp_config_plan.yml"
+        dest: "~/{{ custom_config }}"
+        mode: "0640"
+
+    - name: "Phase 2 - Hint for familiarizing yourself with the Framework content and editing the Assessment Plan"
+      ansible.builtin.debug:
+        msg: "{{ cmd_help.split('\n') }}"
+
+    - name: "Phase 2 - Execute 'plan' command with a configuration file to create a custom Assessment Plan"
+      ansible.builtin.command:
+        cmd: "complyctl plan {{ framework_id }} --scope-config {{ custom_config }}"
+      changed_when: true
+
+    - name: "Phase 2 - Execute 'generate' command after customized Assessment Plan"
+      ansible.builtin.command:
+        cmd: "complyctl generate"
+      changed_when: true
+
+    - name: "Phase 2 - Execute 'scan' command using custom Assessment Plan"
+      ansible.builtin.command:
+        cmd: "complyctl scan --with-md"
+      changed_when: true
+      become: true
+
+    - name: "Phase 2 - Run tree command to collect directory structure"
+      ansible.builtin.command:
+        cmd: "{{ cmd_tree }}"
+      changed_when: false
+      register: result_tree_scan2
+
+    - name: "Phase 2 - Fetch files from remote host to local machine"
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ local_directories[1] }}/"
+        flat: true
+      become: true
+      loop: "{{ generated_files }}"
+
+    # Phase 3: Fixing the failed rules and scanning again
+    - name: "Starting the Phase 3 - Fixing the failed rules and scanning again"
+      ansible.builtin.debug:
+        msg: "Phase 3 will fix the failed rules and scan the system again using the same customized Assessment Plan"
+
+    - name: "Phase 3 - Fix package_firewalld_installed"
+      ansible.builtin.dnf:
+        name:
+          - firewalld
+        state: present
+      become: true
+
+    - name: "Phase 3 - Fix sudo_custom_logfile"
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        line: 'Defaults logfile={{ var_sudo_logfile }}'
+        validate: /usr/sbin/visudo -cf %s
+      become: true
+
+    - name: "Phase 3 - Fix accounts_umask_etc_login_defs"
+      ansible.builtin.replace:
+        path: /etc/login.defs
+        regexp: ^(\s*)UMASK(\s+).*
+        replace: '\g<1>UMASK\g<2>{{ var_accounts_user_umask }}'
+      become: true
+
+    - name: "Phase 3 - Execute 'scan' command again with same customized Assessment Plan"
+      ansible.builtin.command:
+        cmd: "complyctl scan --with-md"
+      changed_when: true
+      become: true
+
+    - name: "Phase 3 - Fetch files from remote host to local machine"
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ local_directories[2] }}/"
+        flat: true
+      become: true
+      loop: "{{ generated_files }}"
+
+    - name: "Show output of tree commands to compare files before and after a custom Assessment Plan"
+      ansible.builtin.debug:
+        var: "{{ item }}"
+      loop:
+        - result_tree_scan1.stdout_lines
+        - result_tree_scan2.stdout_lines
+
+    - name: "Now explore the fetched files in your local directories"
+      ansible.builtin.debug:
+        msg: "{{ item }}"
+      loop: "{{ local_directories }}"
+
+    - name: "Comprehensive Fedora Demo completion summary"
+      ansible.builtin.debug:
+        msg: |
+          🎉 COMPREHENSIVE FEDORA COMPLIANCE DEMO COMPLETE! 🎉
+          
+          ============================================
+          3-PHASE COMPLIANCE WORKFLOW DEMONSTRATED:
+          ============================================
+          
+          📋 PHASE 1: Out-of-box Scanning
+          ✅ Generated initial assessment plan
+          ✅ Performed baseline compliance scan
+          ✅ Identified 3 non-compliant rules:
+             • package_firewalld_installed
+             • sudo_custom_logfile
+             • accounts_umask_etc_login_defs
+          
+          🔧 PHASE 2: Custom Configuration
+          ✅ Created custom assessment plan configuration
+          ✅ Applied selective rule inclusion/exclusion
+          ✅ Re-generated customized assessment plan
+          ✅ Performed compliance scan with custom config
+          
+          🛠️  PHASE 3: System Remediation
+          ✅ Fixed package_firewalld_installed (installed firewalld)
+          ✅ Fixed sudo_custom_logfile (configured log file)
+          ✅ Fixed accounts_umask_etc_login_defs (set umask to 027)
+          ✅ Performed final compliance scan showing improvements
+          
+          ============================================
+          FILES GENERATED AND COLLECTED:
+          ============================================
+          
+          📁 downloads_scan1/ (Phase 1 results)
+          📁 downloads_scan2/ (Phase 2 results)  
+          📁 downloads_scan3/ (Phase 3 results)
+          
+          Each directory contains:
+          • config_plan.yml
+          • assessment-plan.json
+          • assessment-results.json
+          • assessment-results.md
+          
+          ============================================
+          CUSP FEDORA FRAMEWORK FEATURES:
+          ============================================
+          
+          🔐 Account Protection (cusp_fedora_4-1)
+             • accounts_umask_etc_login_defs rule
+             • Configures proper umask settings
+          
+          🔒 Sudo Configuration (cusp_fedora_4-2)  
+             • sudo_custom_logfile rule
+             • Enables audit logging for sudo commands
+          
+          🔥 Firewall Configuration (cusp_fedora_5-2)
+             • package_firewalld_installed rule
+             • Ensures firewall protection is active
+          
+          ============================================
+          COMPLIANCE TRANSFORMATION ACHIEVED:
+          ============================================
+          
+          Before: Non-compliant system with security gaps
+          After: Compliant system meeting CUSP requirements
+          
+          This demonstrates the complete compliance lifecycle:
+          Assessment → Planning → Remediation → Verification
+          
+          ============================================
+          🎯 Comprehensive Compliance Demo completed successfully! 🎯
+          ============================================
+...

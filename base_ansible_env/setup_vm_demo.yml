@@ -1,0 +1,169 @@
+---
+# Complete ComplyTime VM Demo Setup Tasks
+
+- name: "Install required packages on VM"
+  dnf:
+    name:
+      - golang
+      - git
+      - ansible
+      - openscap-scanner
+      - openscap-engine-sce
+      - scap-security-guide
+      - tree
+      - vim
+    state: present
+    update_cache: yes
+  become: true
+
+- name: "Create complyctl workspace directories on VM"
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ complyctl_workspace }}/controls"
+    - "{{ complyctl_workspace }}/bundles"
+    - "{{ complyctl_workspace }}/plugins"
+
+- name: "Clone complyctl repository on VM"
+  git:
+    repo: "https://github.com/complytime/complyctl.git"
+    dest: "/tmp/complyctl"
+    force: yes
+
+- name: "Build complyctl binary on VM"
+  command: "make build"
+  args:
+    chdir: "/tmp/complyctl"
+  environment:
+    COMPLYTIME_DEV_MODE: "1"
+
+- name: "Install complyctl binary on VM"
+  copy:
+    src: "/tmp/complyctl/bin/complyctl"
+    dest: "/usr/local/bin/complyctl"
+    mode: "0755"
+    remote_src: yes
+
+- name: "Set COMPLYTIME_DEV_MODE environment variable on VM"
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: 'export COMPLYTIME_DEV_MODE=1'
+    insertafter: EOF
+    state: present
+
+- name: "Download CUSP OSCAL Catalog to VM"
+  get_url:
+    url: "{{ catalog }}"
+    dest: "{{ complyctl_workspace }}/controls/{{ catalog_file }}"
+    mode: "0644"
+
+- name: "Download CUSP OSCAL Profile to VM"
+  get_url:
+    url: "{{ profile }}"
+    dest: "{{ complyctl_workspace }}/controls/{{ profile_file }}"
+    mode: "0644"
+
+- name: "Download CUSP OSCAL Component Definition to VM"
+  get_url:
+    url: "{{ component_definition }}"
+    dest: "{{ complyctl_workspace }}/bundles/{{ component_definition_file }}"
+    mode: "0644"
+
+- name: "Fix CUSP OSCAL path references in profile on VM"
+  replace:
+    path: "{{ complyctl_workspace }}/controls/{{ profile_file }}"
+    regexp: "trestle://catalogs/cusp_fedora/catalog.json"
+    replace: "trestle://controls/{{ catalog_file }}"
+
+- name: "Fix CUSP OSCAL path references in component definition on VM"
+  replace:
+    path: "{{ complyctl_workspace }}/bundles/{{ component_definition_file }}"
+    regexp: "trestle://profiles/fedora-cusp_fedora-default/profile.json"
+    replace: "trestle://controls/{{ profile_file }}"
+
+- name: "Copy OpenSCAP plugin to VM workspace"
+  copy:
+    src: "/tmp/complyctl/bin/openscap-plugin"
+    dest: "{{ complyctl_workspace }}/plugins/openscap-plugin"
+    mode: "0755"
+    remote_src: yes
+
+- name: "Compute SHA256 checksum of openscap-plugin on VM"
+  stat:
+    path: "{{ complyctl_workspace }}/plugins/openscap-plugin"
+    checksum_algorithm: sha256
+  register: plugin_checksum
+
+- name: "Create OpenSCAP plugin manifest using template on VM"
+  template:
+    src: "templates/c2p-openscap-manifest.json.j2"
+    dest: "{{ complyctl_workspace }}/plugins/c2p-openscap-manifest.json"
+    mode: "0644"
+  vars:
+    result_plugin_checksum: "{{ plugin_checksum }}"
+
+- name: "Copy demo_cusp_config_plan.yml to VM"
+  copy:
+    src: "files/demo_cusp_config_plan.yml"
+    dest: "~/files/demo_cusp_config_plan.yml"
+    mode: "0644"
+
+- name: "Initialize complyctl workspace on VM"
+  command: "complyctl list"
+  environment:
+    COMPLYTIME_DEV_MODE: "1"
+  failed_when: false
+  changed_when: false
+
+- name: "Generate assessment plan with CUSP custom configuration on VM"
+  command: "complyctl plan {{ demo_framework }} --scope-config files/demo_cusp_config_plan.yml"
+  environment:
+    COMPLYTIME_DEV_MODE: "1"
+  failed_when: false
+  changed_when: true
+
+- name: "Display VM demo commands"
+  debug:
+    msg: |
+      🎉 ComplyTime VM Demo Setup Complete!
+      
+      Available Commands (run on VM):
+      ================================
+      complyctl list                                    # List available frameworks
+      complyctl info {{ demo_framework }}               # Show CUSP framework details
+      complyctl plan {{ demo_framework }}               # Generate default assessment plan
+      complyctl plan {{ demo_framework }} --scope-config files/demo_cusp_config_plan.yml  # Generate custom assessment plan
+      complyctl generate                                # Generate policy files
+      complyctl scan                                    # Run compliance scan
+      tree -a                                           # Show directory structure
+      
+      Files Created on VM:
+      ===================
+      - Assessment Plan: complytime/assessment-plan.json
+      - CUSP OSCAL Content: {{ complyctl_workspace }}/controls/
+      - Plugin: {{ complyctl_workspace }}/plugins/
+      - Custom Config: files/demo_cusp_config_plan.yml
+      
+      VM Connection Details:
+      =====================
+      - Host: complytime-fedora-demo (from ansible_inventory)
+      - Port: 2222
+      - User: root
+      - Password: complytime
+      
+      CUSP Framework Features:
+      =======================
+      - Account Protection (cusp_fedora_4-1)
+      - Sudo Configuration (cusp_fedora_4-2)
+      - Firewall Configuration (cusp_fedora_5-2)
+      - Custom rule inclusion/exclusion
+      
+      Next Steps:
+      ===========
+      1. Connect to VM: ssh root@localhost -p 2222
+      2. Explore the assessment plan: cat complytime/assessment-plan.json
+      3. Run demo commands to see CUSP compliance scanning in action
+      4. Modify files/demo_cusp_config_plan.yml to customize the assessment
+      5. Try different CUSP controls and rules

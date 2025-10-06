@@ -1,0 +1,168 @@
+# Enhanced Pre-commit Configuration for complyctl
+# Go-focused project with security and compliance requirements
+# This extends the existing configuration with additional safety checks
+
+default_stages: [pre-push]  # Maintain existing behavior
+
+repos:
+  # ==============================================================================
+  # BASIC FILE AND CONTENT CHECKS
+  # ==============================================================================
+  
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0  # Updated from existing
+    hooks:
+      # Existing hooks - enhanced
+      - id: trailing-whitespace
+        stages: [pre-commit, pre-push]
+      - id: end-of-file-fixer
+        stages: [pre-commit, pre-push]
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        stages: [pre-push]
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        exclude: "^internal/complytime/testdata/openscap/ssg-rhel-ds.xml$"
+        stages: [pre-commit, pre-push]
+      
+      # New security and safety hooks
+      - id: check-merge-conflict
+        stages: [pre-commit, pre-push]
+      - id: detect-aws-credentials
+        stages: [pre-commit, pre-push]
+      - id: detect-private-key
+        stages: [pre-commit, pre-push]
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+        stages: [pre-commit, pre-push]
+      - id: check-case-conflict
+        stages: [pre-commit, pre-push]
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
+        stages: [pre-commit, pre-push]
+
+  # ==============================================================================
+  # GO LANGUAGE HOOKS - Enhanced from existing
+  # ==============================================================================
+  
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1  # Maintain existing
+    hooks:
+      # Existing hooks
+      - id: go-fmt
+        stages: [pre-commit, pre-push]
+      - id: go-unit-tests
+        stages: [pre-push]
+      
+      # Re-enable previously commented hooks
+      - id: go-imports
+        stages: [pre-commit, pre-push]
+      - id: golangci-lint
+        stages: [pre-push]
+      
+      # Additional Go hooks for safety
+      - id: go-vet-mod
+        stages: [pre-push]
+      - id: go-mod-tidy
+        stages: [pre-push]
+      - id: go-build-mod
+        stages: [pre-push]
+
+  # ==============================================================================
+  # SECURITY SCANNING
+  # ==============================================================================
+  
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package-lock.json
+        stages: [pre-push]
+
+  # Go-specific security scanning
+  - repo: https://github.com/securecodewarrior/github-action-add-sarif
+    rev: v1.1.2
+    hooks:
+      - id: gosec
+        stages: [pre-push]
+
+  # ==============================================================================
+  # DOCUMENTATION AND CONFIG FILES
+  # ==============================================================================
+  
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix']
+        files: \.(md|markdown)$
+        stages: [pre-push]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ['-d', 'relaxed']
+        files: \.(yaml|yml)$
+        stages: [pre-push]
+
+  # ==============================================================================
+  # LOCAL CUSTOM HOOKS - Enhanced from existing
+  # ==============================================================================
+  
+  - repo: local
+    hooks:
+      # Existing SPDX check - enhanced
+      - id: check-spdx
+        name: Check and fix SPDX license headers
+        entry: python ./scripts/check-and-fix-spdx.py
+        language: system
+        stages: [pre-commit, pre-push]  # Run on both stages
+        files: \.(py|go|sh)$
+        
+      # New: Go mod verification
+      - id: go-mod-verify
+        name: Verify Go module dependencies
+        entry: go mod verify
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        
+      # New: Go vulnerability check
+      - id: go-vuln-check
+        name: Check for known Go vulnerabilities
+        entry: sh -c 'go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...'
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        
+      # New: Custom compliance checks
+      - id: compliance-check
+        name: Run compliance-specific checks
+        entry: ./scripts/compliance-check.sh
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        files: \.(go|yaml|yml)$
+        
+      # New: Test data validation
+      - id: validate-test-data
+        name: Validate test data files
+        entry: ./scripts/validate-test-data.sh
+        language: system
+        stages: [pre-push]
+        files: ^internal/complytime/testdata/.*\.(json|xml|yaml|yml)$
+
+# ==============================================================================
+# CI CONFIGURATION
+# ==============================================================================
+
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes for complyctl
+    
+    Applied automatic fixes from pre-commit hooks
+  autofix_prs: true
+  autoupdate_schedule: weekly
+  skip: [go-vuln-check, compliance-check]  # Skip expensive checks in CI

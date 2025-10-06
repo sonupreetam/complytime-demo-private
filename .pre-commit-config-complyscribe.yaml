@@ -1,0 +1,224 @@
+# Enhanced Pre-commit Configuration for complyscribe
+# Python project with poetry, security scanning, and compliance focus
+# This extends the existing configuration with additional safety and workflow checks
+
+default_stages: [pre-push]
+
+repos:
+  # ==============================================================================
+  # BASIC FILE AND CONTENT CHECKS - New additions
+  # ==============================================================================
+  
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # File content safety
+      - id: trailing-whitespace
+        stages: [pre-commit, pre-push]
+      - id: end-of-file-fixer
+        stages: [pre-commit, pre-push]
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+        stages: [pre-commit, pre-push]
+      
+      # Security checks
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        stages: [pre-commit, pre-push]
+      - id: check-merge-conflict
+        stages: [pre-commit, pre-push]
+      - id: detect-aws-credentials
+        stages: [pre-commit, pre-push]
+      - id: detect-private-key
+        stages: [pre-commit, pre-push]
+      
+      # Configuration validation
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        stages: [pre-push]
+      - id: check-json
+        stages: [pre-push]
+      - id: check-toml
+        stages: [pre-push]
+      
+      # Git workflow safety
+      - id: check-case-conflict
+        stages: [pre-commit, pre-push]
+      - id: no-commit-to-branch
+        args: ['--branch', 'main', '--branch', 'master']
+        stages: [pre-commit, pre-push]
+
+  # ==============================================================================
+  # PYTHON CODE FORMATTING AND QUALITY - Enhanced
+  # ==============================================================================
+  
+  - repo: https://github.com/psf/black
+    rev: 25.1.0  # Updated to latest
+    hooks:
+      - id: black
+        language_version: python3
+        stages: [pre-commit, pre-push]
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black", "--lines-after-imports", "2"]
+        stages: [pre-commit, pre-push]
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        additional_dependencies: [flake8-print, flake8-docstrings]
+        stages: [pre-push]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-pyyaml, pydantic]
+        stages: [pre-push]
+
+  # ==============================================================================
+  # SECURITY SCANNING - Enhanced from existing
+  # ==============================================================================
+  
+  - repo: https://github.com/returntocorp/semgrep
+    rev: v1.51.0
+    hooks:
+      - id: semgrep
+        name: Semgrep Python Security
+        types: [python]
+        args: ["--config", "p/python", "--error", "--metrics=off"]
+        stages: [pre-push]
+      - id: semgrep
+        name: Semgrep Bandit Security  
+        types: [python]
+        exclude: "^tests/.+$"
+        args: ["--config", "p/bandit", "--error", "--metrics=off"]
+        stages: [pre-push]
+      - id: semgrep
+        name: Semgrep OWASP Top 10
+        types: [python]
+        args: ["--config", "p/owasp-top-ten", "--error", "--metrics=off"]
+        stages: [pre-push]
+
+  # Additional security scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package-lock.json
+        stages: [pre-push]
+
+  # ==============================================================================
+  # DOCUMENTATION AND CONFIG FILES
+  # ==============================================================================
+  
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix']
+        files: \.(md|markdown)$
+        stages: [pre-push]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ['-d', 'relaxed']
+        files: \.(yaml|yml)$
+        stages: [pre-push]
+
+  # ==============================================================================
+  # LOCAL CUSTOM HOOKS - Enhanced from existing
+  # ==============================================================================
+  
+  - repo: local
+    hooks:
+      # Existing lint hook - enhanced with more checks
+      - id: lint
+        name: Run comprehensive linting checks
+        entry: make lint
+        language: system
+        stages: [pre-push]
+        types: [python]
+        
+      # New: Poetry dependency verification
+      - id: poetry-check
+        name: Validate poetry configuration and lock file
+        entry: poetry check --lock
+        language: system
+        stages: [pre-push]
+        files: ^(pyproject\.toml|poetry\.lock)$
+        pass_filenames: false
+        
+      # New: Security vulnerability check
+      - id: safety-check
+        name: Check dependencies for security vulnerabilities
+        entry: make dep-cve-check
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        
+      # New: Test coverage enforcement
+      - id: test-coverage
+        name: Ensure minimum test coverage
+        entry: make test-code-cov
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        
+      # New: License header check
+      - id: check-license-headers
+        name: Check and add Apache-2.0 license headers
+        entry: ./scripts/check-license-headers.sh
+        language: system
+        stages: [pre-push]
+        files: \.(py|sh)$
+        
+      # New: Compliance-specific validation
+      - id: validate-compliance-templates
+        name: Validate compliance templates and workflows
+        entry: ./scripts/validate-compliance-templates.sh
+        language: system
+        stages: [pre-push]
+        files: ^TEMPLATES/.*\.(yml|yaml)$
+        
+      # New: Action documentation sync
+      - id: sync-action-docs
+        name: Ensure action documentation is up to date
+        entry: make update-action-readmes
+        language: system
+        stages: [pre-push]
+        files: ^actions/.*/(action\.yml|README\.md)$
+        
+      # New: Integration test validation
+      - id: validate-integration-configs
+        name: Validate integration test configurations
+        entry: ./scripts/validate-integration-configs.sh
+        language: system
+        stages: [pre-push]
+        files: ^tests/.*\.(json|yml|yaml)$
+
+# ==============================================================================
+# CI CONFIGURATION - Enhanced
+# ==============================================================================
+
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes for complyscribe
+    
+    Applied automatic formatting and fixes from pre-commit hooks
+  autofix_prs: true
+  autoupdate_branch: 'pre-commit-updates'
+  autoupdate_schedule: weekly
+  skip: [
+    safety-check, 
+    test-coverage, 
+    validate-compliance-templates,
+    sync-action-docs
+  ]  # Skip expensive/environment-dependent checks in CI

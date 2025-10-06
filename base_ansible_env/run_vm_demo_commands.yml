@@ -1,0 +1,152 @@
+---
+# Run ComplyTime VM Demo Commands
+
+- name: "List available frameworks on VM"
+  command: "complyctl list"
+  environment:
+    COMPLYTIME_DEV_MODE: "1"
+  register: list_output
+  
+- name: "Display available frameworks"
+  debug:
+    msg: "{{ list_output.stdout }}"
+
+- name: "Get CUSP framework information on VM"
+  command: "complyctl info {{ demo_framework }}"
+  environment:
+    COMPLYTIME_DEV_MODE: "1"
+  register: info_output
+  
+- name: "Display CUSP framework information"
+  debug:
+    msg: "{{ info_output.stdout }}"
+
+- name: "Get specific CUSP control information on VM"
+  command: "complyctl info {{ demo_framework }} --control cusp_fedora_4-1"
+  environment:
+    COMPLYTIME_DEV_MODE: "1"
+  register: control_output
+  
+- name: "Display CUSP control information"
+  debug:
+    msg: "{{ control_output.stdout }}"
+
+- name: "Generate default assessment plan on VM"
+  command: "complyctl plan {{ demo_framework }}"
+  environment:
+    COMPLYTIME_DEV_MODE: "1"
+  register: plan_default_output
+  changed_when: true
+  
+- name: "Display default assessment plan generation"
+  debug:
+    msg: "{{ plan_default_output.stdout }}"
+
+- name: "Generate custom assessment plan using demo_cusp_config_plan.yml on VM"
+  command: "complyctl plan {{ demo_framework }} --scope-config files/demo_cusp_config_plan.yml"
+  environment:
+    COMPLYTIME_DEV_MODE: "1"
+  register: plan_custom_output
+  changed_when: true
+  
+- name: "Display custom assessment plan generation"
+  debug:
+    msg: "{{ plan_custom_output.stdout }}"
+
+- name: "Check generated files on VM"
+  stat:
+    path: "{{ item }}"
+  register: file_stats
+  loop:
+    - "complytime/assessment-plan.json"
+    - "~/.local/share/complytime/controls/cusp-catalog.json"
+    - "~/.local/share/complytime/controls/cusp-profile.json"
+    - "~/.local/share/complytime/bundles/cusp-component-definition.json"
+    - "files/demo_cusp_config_plan.yml"
+
+- name: "Display generated files"
+  debug:
+    msg: |
+      Generated Files on VM:
+      ======================
+      {% for stat in file_stats.results %}
+      - {{ stat.item }}: {{ 'EXISTS' if stat.stat.exists else 'MISSING' }}
+      {% if stat.stat.exists %}
+        Size: {{ stat.stat.size }} bytes
+        Modified: {{ stat.stat.mtime }}
+      {% endif %}
+      {% endfor %}
+
+- name: "Show assessment plan preview from VM"
+  shell: "head -20 complytime/assessment-plan.json"
+  register: plan_preview
+  
+- name: "Display assessment plan preview"
+  debug:
+    msg: |
+      Assessment Plan Preview (from VM):
+      ==================================
+      {{ plan_preview.stdout }}
+
+- name: "Show custom configuration file from VM"
+  shell: "cat files/demo_cusp_config_plan.yml"
+  register: config_preview
+  
+- name: "Display custom configuration"
+  debug:
+    msg: |
+      Custom CUSP Configuration (from VM):
+      ====================================
+      {{ config_preview.stdout }}
+
+- name: "Display directory structure on VM"
+  command: "tree -a -L 3"
+  register: tree_output
+  
+- name: "Show directory structure"
+  debug:
+    msg: "{{ tree_output.stdout }}"
+
+- name: "VM demo completion message"
+  debug:
+    msg: |
+      🎉 VM Demo Commands Completed Successfully!
+      
+      What was demonstrated on VM:
+      ============================
+      ✅ Listed available compliance frameworks
+      ✅ Retrieved detailed CUSP framework information
+      ✅ Showed specific CUSP control details (cusp_fedora_4-1)
+      ✅ Generated default OSCAL assessment plan
+      ✅ Generated custom assessment plan using demo_cusp_config_plan.yml
+      ✅ Created compliance workspace structure on VM
+      
+      Files Generated on VM:
+      =====================
+      - Assessment Plan: complytime/assessment-plan.json
+      - CUSP Catalog: ~/.local/share/complytime/controls/cusp-catalog.json
+      - CUSP Profile: ~/.local/share/complytime/controls/cusp-profile.json
+      - Component Definition: ~/.local/share/complytime/bundles/cusp-component-definition.json
+      - Custom Config: files/demo_cusp_config_plan.yml
+      
+      VM Connection Details:
+      =====================
+      - Host: complytime-fedora-demo (from ansible_inventory)
+      - Port: 2222
+      - User: root
+      - Password: complytime
+      
+      CUSP Framework Features Demonstrated:
+      ====================================
+      - Account Protection (cusp_fedora_4-1): accounts_umask_etc_login_defs
+      - Sudo Configuration (cusp_fedora_4-2): sudo_custom_logfile
+      - Firewall Configuration (cusp_fedora_5-2): All rules except firewalld/nftables
+      
+      Next Steps:
+      ===========
+      1. Connect to VM: ssh root@localhost -p 2222
+      2. Run 'complyctl generate' to create policy files
+      3. Run 'complyctl scan' to perform CUSP compliance scanning
+      4. Explore the generated assessment plan
+      5. Modify files/demo_cusp_config_plan.yml to customize controls
+      6. Try different CUSP controls: complyctl info cusp_fedora --control cusp_fedora_4-2

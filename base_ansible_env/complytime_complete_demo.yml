@@ -1,0 +1,106 @@
+---
+- name: "ComplyTime Complete Demo - Setup and Execution"
+  hosts: localhost
+  connection: local
+  become: false
+  vars:
+    demo_framework: "anssi_bp28_minimal"
+    complyctl_workspace: "~/.local/share/complytime"
+    
+    # OSCAL content URLs (ANSSI BP28 minimal profile)
+    catalog: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/catalogs/anssi/catalog.json"
+    profile: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/profiles/rhel9-anssi-minimal/profile.json"
+    component_definition: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/component-definitions/rhel9/rhel9-anssi-minimal/component-definition.json"
+
+    catalog_file: "test-catalog.json"
+    profile_file: "test-profile.json"
+    component_definition_file: "test-component-definition.json"
+    
+  tasks:
+    - name: "Include complete setup playbook"
+      import_tasks: setup_complete_demo.yml
+      
+    - name: "Wait for setup to complete"
+      pause:
+        seconds: 2
+        
+    - name: "Include demo commands playbook"
+      import_tasks: run_demo_commands.yml
+      
+    - name: "Final demo summary"
+      debug:
+        msg: |
+          🚀 COMPLYTIME DEMO COMPLETE! 🚀
+          
+          ============================================
+          SUCCESSFULLY DEMONSTRATED:
+          ============================================
+          
+          1. ✅ Complete Environment Setup
+             - Fedora container with all dependencies
+             - complyctl built and installed
+             - OpenSCAP plugin configured
+             - OSCAL content downloaded
+          
+          2. ✅ Compliance Framework Operations
+             - Listed available frameworks (ANSSI BP28)
+             - Retrieved detailed control information
+             - Generated OSCAL assessment plan
+             - Created compliance workspace
+          
+          3. ✅ File Structure Created
+             - Assessment Plan: complytime/assessment-plan.json
+             - OSCAL Catalog, Profile, Component Definition
+             - Plugin manifest and binary
+             - Complete workspace structure
+          
+          ============================================
+          READY FOR PRODUCTION USE:
+          ============================================
+          
+          The demo environment is now ready for:
+          - Compliance scanning with OpenSCAP
+          - Policy generation and management
+          - OSCAL content transformation
+          - Integration with CI/CD pipelines
+          
+          ============================================
+          QUICK REFERENCE COMMANDS:
+          ============================================
+          
+          # List frameworks
+          complyctl list
+          
+          # Get framework details
+          complyctl info anssi_bp28_minimal
+          
+          # Generate assessment plan
+          complyctl plan anssi_bp28_minimal
+          
+          # Generate policy files
+          complyctl generate
+          
+          # Run compliance scan
+          complyctl scan
+          
+          # Show workspace structure
+          tree -a
+          
+          ============================================
+          🎯 Demo completed successfully! 🎯
+          ============================================
+
+  handlers:
+    - name: "Update profile references"
+      replace:
+        path: "{{ complyctl_workspace }}/bundles/{{ component_definition_file }}"
+        regexp: "trestle://.*"
+        replace: "trestle://controls/{{ profile_file }}"
+
+    - name: "Update catalog references"
+      replace:
+        path: "{{ complyctl_workspace }}/controls/{{ profile_file }}"
+        regexp: "trestle://.*"
+        replace: "trestle://controls/{{ catalog_file }}"
+
+

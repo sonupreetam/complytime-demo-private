@@ -1,0 +1,113 @@
+---
+- name: "ComplyTime CUSP Fedora Demo - Setup and Execution"
+  hosts: localhost
+  connection: local
+  become: false
+  vars:
+    demo_framework: "cusp_fedora"
+    complyctl_workspace: "~/.local/share/complytime"
+    
+    # CUSP content URLs (using CUSP Fedora content)
+    catalog: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/catalogs/cusp_fedora/catalog.json"
+    profile: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/profiles/fedora-cusp_fedora-default/profile.json"
+    component_definition: "https://github.com/ComplianceAsCode/oscal-content/raw/refs/heads/main/component-definitions/fedora/fedora-cusp_fedora-default/component-definition.json"
+
+    catalog_file: "cusp-catalog.json"
+    profile_file: "cusp-profile.json"
+    component_definition_file: "cusp-component-definition.json"
+    
+  tasks:
+    - name: "Include CUSP setup playbook"
+      import_tasks: setup_cusp_demo.yml
+      
+    - name: "Wait for setup to complete"
+      pause:
+        seconds: 2
+        
+    - name: "Include CUSP demo commands playbook"
+      import_tasks: run_cusp_demo_commands.yml
+      
+    - name: "Final CUSP demo summary"
+      debug:
+        msg: |
+          🚀 COMPLYTIME CUSP FEDORA DEMO COMPLETE! 🚀
+          
+          ============================================
+          SUCCESSFULLY DEMONSTRATED:
+          ============================================
+          
+          1. ✅ Complete CUSP Environment Setup
+             - Fedora container with all dependencies
+             - complyctl built and installed
+             - OpenSCAP plugin configured with template
+             - CUSP Fedora content configured
+          
+          2. ✅ CUSP Compliance Framework Operations
+             - Listed available frameworks (CUSP Fedora)
+             - Retrieved detailed control information
+             - Generated custom assessment plan using demo_cusp_config_plan.yml
+             - Created compliance workspace
+          
+          3. ✅ File Structure Created
+             - Assessment Plan: complytime/assessment-plan.json
+             - CUSP Catalog, Profile, Component Definition
+             - Plugin manifest and binary (using template)
+             - Complete workspace structure
+          
+          ============================================
+          CUSP FRAMEWORK FEATURES DEMONSTRATED:
+          ============================================
+          
+          - Account Protection (cusp_fedora_4-1)
+          - Sudo Configuration (cusp_fedora_4-2)  
+          - Firewall Configuration (cusp_fedora_5-2)
+          - Custom rule inclusion/exclusion
+          
+          ============================================
+          READY FOR PRODUCTION USE:
+          ============================================
+          
+          The CUSP demo environment is now ready for:
+          - CUSP compliance scanning with OpenSCAP
+          - Custom assessment plan configuration
+          - Policy generation and management
+          - Integration with CI/CD pipelines
+          
+          ============================================
+          QUICK REFERENCE COMMANDS:
+          ============================================
+          
+          # List frameworks
+          complyctl list
+          
+          # Get CUSP framework details
+          complyctl info cusp_fedora
+          
+          # Generate assessment plan with custom config
+          complyctl plan cusp_fedora --scope-config files/demo_cusp_config_plan.yml
+          
+          # Generate policy files
+          complyctl generate
+          
+          # Run compliance scan
+          complyctl scan
+          
+          # Show workspace structure
+          tree -a
+          
+          ============================================
+          🎯 CUSP Demo completed successfully! 🎯
+          ============================================
+
+  handlers:
+    - name: "Update profile references"
+      replace:
+        path: "{{ complyctl_workspace }}/bundles/{{ component_definition_file }}"
+        regexp: "trestle://.*"
+        replace: "trestle://controls/{{ profile_file }}"
+
+    - name: "Update catalog references"
+      replace:
+        path: "{{ complyctl_workspace }}/controls/{{ profile_file }}"
+        regexp: "trestle://.*"
+        replace: "trestle://controls/{{ catalog_file }}"

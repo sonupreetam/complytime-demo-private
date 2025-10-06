@@ -1,0 +1,80 @@
+---
+- name: "ComplyTime RPM-Based Deployment Demo"
+  hosts: localhost
+  connection: local
+  become: false
+  vars:
+    demo_framework: "cusp_fedora"
+    repo_org: "complytime"
+    repo_name: "complyctl"
+    spec_file: "complyctl.spec"
+    
+  tasks:
+    - name: "Include RPM build and installation tasks"
+      import_tasks: populate_complyctl_dev_rpm.yml
+      
+    - name: "Wait for installation to complete"
+      pause:
+        seconds: 3
+        
+    - name: "Verify RPM installation"
+      shell: "rpm -qa | grep complyctl"
+      register: rpm_verification
+      
+    - name: "Display installed RPM packages"
+      debug:
+        msg: |
+          🎉 COMPLYTIME RPM DEMO COMPLETE! 🎉
+          
+          ============================================
+          RPM PACKAGES SUCCESSFULLY INSTALLED:
+          ============================================
+          
+          {{ rpm_verification.stdout }}
+          
+          ============================================
+          WHAT WAS DEMONSTRATED:
+          ============================================
+          
+          1. ✅ Built complyctl from source as RPM packages
+          2. ✅ Used proper RPM packaging with spec files
+          3. ✅ Installed via DNF package manager (production-like)
+          4. ✅ Generated assessment plan with CUSP framework
+          5. ✅ Verified package installation and functionality
+          
+          ============================================
+          RPM DEPLOYMENT BENEFITS:
+          ============================================
+          
+          - Production-ready package deployment
+          - Proper dependency management
+          - System integration via package manager
+          - Easy updates and rollbacks
+          - Distribution-compatible installation
+          
+          ============================================
+          QUICK REFERENCE COMMANDS:
+          ============================================
+          
+          # Verify RPM installation
+          rpm -qa | grep complyctl
+          
+          # List frameworks
+          complyctl list
+          
+          # Get framework details
+          complyctl info cusp_fedora
+          
+          # Generate assessment plan
+          complyctl plan cusp_fedora
+          
+          # Generate policy files
+          complyctl generate
+          
+          # Run compliance scan
+          complyctl scan
+          
+          ============================================
+          🎯 RPM Demo completed successfully! 🎯
+          ============================================
+

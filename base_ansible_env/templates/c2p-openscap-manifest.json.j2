@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "id": "openscap",
+    "description": "My openscap plugin",
+    "version": "0.0.1",
+    "types": [
+      "pvp"
+    ]
+  },
+  "executablePath": "openscap-plugin",
+  "sha256": "{{ result_plugin_checksum.stat.checksum }}",
+  "configuration": [
+    {
+      "name": "workspace",
+      "description": "Directory for writing plugin artifacts",
+      "required": true
+    },
+    {
+      "name": "profile",
+      "description": "The OpenSCAP profile to run for assessment",
+      "required": true,
+      "default": "{{ 'xccdf_org.ssgproject.content_profile_anssi_bp28_minimal' if demo_framework == 'anssi_bp28_minimal' else 'xccdf_org.ssgproject.content_profile_cusp_fedora' }}"
+    },
+    {
+      "name": "datastream",
+      "description": "The OpenSCAP datastream to use. If not set, the plugin will try to determine it based on system information",
+      "required": false,
+      "default": "{{ '/usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml' if demo_framework == 'anssi_bp28_minimal' else '/usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml' }}"
+    },
+    {
+      "name": "results",
+      "description": "The name of the generated results file",
+      "default": "results.xml",
+      "required": false
+    },
+    {
+      "name": "arf",
+      "description": "The name of the generated ARF file",
+      "default": "arf.xml",
+      "required": false
+    },
+    {
+      "name": "policy",
+      "description": "The name of the generated tailoring file",
+      "default": "tailoring_policy.xml",
+      "required": false
+    }
+  ]
+}

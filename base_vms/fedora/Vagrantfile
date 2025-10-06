@@ -1,0 +1,59 @@
+# This Vagrant file will create a Fedora VM using the libvirt provider.
+# It intended to be used only for local tests.
+
+Vagrant.configure("2") do |config|
+  config.vm.provider "libvirt" do |libvirt|
+    libvirt.memory = "2048"
+    libvirt.cpus = 2
+    libvirt.default_prefix = "complytime_"
+    libvirt.machine_virtual_size = 10
+    libvirt.channel :type => 'unix', :target_name => 'org.qemu.guest_agent.0', :target_type => 'virtio'
+    # Use session URI and disable network validation
+    libvirt.uri = 'qemu:///session'
+    libvirt.connect_via_ssh = false
+    libvirt.host = 'localhost'
+  end
+
+  config.vm.define "fedora" do |fedora|
+    fedora.vm.box      = "generic/fedora40"
+    fedora.vm.hostname = "complytime-fedora-demo"
+  end
+
+  # This will collect the SSH public key used to access the VM. Update the path if needed.
+  ssh_pub_key = File.readlines("#{Dir.home}/.ssh/id_rsa.pub").first.strip
+
+  # To customize the VM during its provisioning, write the commands between "-SCRIPT" and "SCRIPT".
+  $bootstrap = <<-SCRIPT
+  # Start the customizations
+  mkdir -p /root/.ssh
+  echo #{ssh_pub_key} >> /home/vagrant/.ssh/authorized_keys
+  echo #{ssh_pub_key} >> /root/.ssh/authorized_keys
+
+  # Configure root user for demo (simplified for demo purposes)
+  echo "root:complytime" | chpasswd
+  sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+  systemctl restart sshd
+
+  # Configure Ansible user that can elevate privileges without a password
+  useradd -G wheel ansible && mkdir -p /home/ansible/.ssh && echo #{ssh_pub_key} >> /home/ansible/.ssh/authorized_keys
+  chown -R ansible:ansible /home/ansible/.ssh && chmod 700 /home/ansible/.ssh
+  chmod 600 /home/ansible/.ssh/authorized_keys
+  echo "ansible ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/ansible
+  chmod 0440 /etc/sudoers.d/ansible
+
+  # Install required packages for ComplyTime demo
+  dnf install -y qemu-guest-agent openssh-clients openssh-server
+  dnf install -y git python3-pip tar tree vim
+  dnf install -y --nobest openscap-scanner openscap-engine-sce scap-security-guide
+  dnf install -y golang ansible
+
+  # Upgrade the system
+  dnf upgrade -y
+  SCRIPT
+  config.vm.provision "shell", inline: $bootstrap
+
+  config.trigger.after :up do |trigger|
+    trigger.name = "Execute local script to update Ansible inventory and add SSH key"
+    trigger.run = { inline: "../populate_ansible_inventory.sh" }
+  end
+end
