@@ -11,7 +11,6 @@
 # Ignore local changes to this file
 base_ansible_env/ansible_inventory
 base_ansible_env/downloads_scan*
-go.work.sum
 
 # Speckit — managed by specify init (recreate with: specify init --ai opencode)
 .specify/extensions.yml
