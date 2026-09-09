@@ -41,7 +41,6 @@ complytime-demos/
 │   ├── fedora/                     # Fedora VM (Vagrantfile)
 │   ├── rhel9/                      # RHEL 9 VM (Vagrantfile)
 │   └── populate_ansible_inventory.sh
-├── tools/                          # Supporting tools (gemara2ampel)
 └── README.md
 ```
 
